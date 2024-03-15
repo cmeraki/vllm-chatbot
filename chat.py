@@ -1,90 +1,78 @@
 import sys
-from queue import Queue
+import json
 from loguru import logger
-from engine import Engine
-import paho.mqtt.client as mqtt
-from paho.mqtt import client as mqtt_client
+from paho.mqtt.client import MQTTMessage
+from pubsub import Publisher, Subscriber
 
 logger.remove()
 logger.add(sys.stdout, level='INFO')
 
-conversation_counter = 0
-bot = Engine()
-
-
-class Subscriber:
-    def __init__(self):
-        self.client = mqtt.Client(
-            mqtt_client.CallbackAPIVersion.VERSION1, 'python-mqtt-123'
-        )
-        self.topic = 'vLLM'
-        self.completed_requests = Queue()
-
-    def on_message(self, client, userdata, message):
-        logger.info(f'Received message: {message}')
-        self.completed_requests.put(message)
-
-    def connect(self, broker="localhost", port=1883):
-        self.client.connect(broker, port, 300)
-        self.client.subscribe(self.topic)
-        self.client.on_message = self.on_message
-        self.client.loop_start()
-
 class Chat:
-    def __init__(self):
-        global conversation_counter
-        self.id = str(conversation_counter)
+    def __init__(self, id, publisher: Publisher,subscriber: Subscriber):
+        self.id = id
         self.messages = []
         self.history = ''
         self.prefix_pos = -1
-        conversation_counter += 1
 
-        self.subscriber = Subscriber()
+        self.publisher = publisher
+        self.subscriber = subscriber
 
     def chat(self, user_message: str) -> str:
+        logger.info(f'User message received: {user_message}')
+
         self.messages.append(user_message)
         self.history, self.prefix_pos = self._history()
 
-        bot.send_message(
-            request_id = self.id,
-            messsage=self.history,
-            prefix_pos=self.prefix_pos
-        )
+        logger.info(f'User history: {self.history}')
+        logger.info(f'Prefix pos: {self.prefix_pos}')
 
-        bot()
+        self.publisher.connect()
+        self.publisher.publish(json.dumps({
+            'request_id': self.id,
+            'message': self.history,
+            'prefix_pos': self.prefix_pos
+        }))
 
-        while self.subscriber.completed_requests:
-            for m in self.subscriber.completed_requests:
-                print(f'Queue message: {m}')
-                assistant_message = m
+        while True:
+            if self.subscriber.completed_requests:
+                m: MQTTMessage = self.subscriber.completed_requests.pop()
+                logger.info(f'Queue message: {m.payload.decode()}')
+                response = json.loads(m.payload.decode())
+                assistant_message = response['message']
                 self.messages.append(assistant_message)
 
-        return assistant_message
+                return assistant_message
 
     def _history(self):
-        user_fomrat = "User: {message}"
-        assistant_format = "Assistant: {message}"
+        user_fomrat = "User: {message}\n"
+        assistant_format = "Assistant: {message}\n"
+        prefix_pos = 1
 
         complete_history = ''
 
-        for idx, msg in enumerate(self.conversation.messages):
-            if idx%2:
+        for idx, msg in enumerate(self.messages):
+            if not idx%2:
                 complete_history += user_fomrat.format(message=msg)
-                complete_history += '\n'
                 continue
 
             complete_history += assistant_format.format(message=msg)
-            complete_history += '\n'
+            prefix_pos += len(assistant_format.format(message=msg))
 
-        return complete_history, len(complete_history) - 1
+        return complete_history, prefix_pos - 1
 
     def end_chat(self):
-        with open('history.txt', 'w') as fp:
+        with open(f'./tmp/history/history_{self.id}.txt', 'w') as fp:
             for ln in self.history.split('\n'):
                 fp.write(ln)
 
 if __name__ == '__main__':
-    c1 = Chat()
-    r1 = c1.chat('Hello, I want to know how to close the account!')
 
-    print(r1)
+    import numpy as np
+    c = Chat()
+
+    for i in range(0, 1):
+        act_number = np.random.randint(1, 100)
+        r = c.chat(f'Hello, I want to know how to close the account number {act_number}!')
+        print(r)
+
+    c.end_chat()

@@ -1,16 +1,14 @@
 import sys
+import json
 import vllm
-from vllm import LLM, SamplingParams
-import paho.mqtt.client as mqtt
-from paho.mqtt import client as mqtt_client
 from typing import List
 from loguru import logger
+from vllm import LLM, SamplingParams
+from paho.mqtt.client import MQTTMessage
+from pubsub import Publisher, Subscriber
 
 logger.remove()
-logger.add(sys.stdout, level='DEBUG')
-
-requests_q = {}
-total_requests = 0
+logger.add(sys.stdout, level='INFO')
 
 class Engine:
     def __init__(
@@ -26,50 +24,70 @@ class Engine:
         )
 
         self.prefix = (
-            "You are a helpful customer care chatbot for a financial company called as Mars."
+            "You are a helpful customer care chatbot for a financial company called as Mars. "
             "For a user query, please respond appropriately by asking questions "
             "and gathering more information before responding.\n"
         )
 
-        self.llm = LLM(model=model_id, gpu_memory_utilization=0.7)
+        self.llm = LLM(model=model_id, gpu_memory_utilization=0.7, max_model_len=1024)
         initial_output = self.llm.generate(
             self.prefix, self.sampling_params
         )
 
         logger.info(f'Prefix cached: {initial_output}')
 
-        self.engine = self.llm.llm_engine
+        self.llm_engine = self.llm.llm_engine
         self.global_prefix_pos = len(self.prefix)
 
-        self.client = mqtt.Client(
-            mqtt_client.CallbackAPIVersion.VERSION1, 'python-mqtt-123'
-        )
-        self.topic = 'vLLM'
+        self.publisher = Publisher('messages/assistant')
+        self.subscriber = Subscriber('messages/user')
 
-        self.client.connect('localhost', 1883, 300)
+        self.subscriber.connect()
 
-    def send_message(self, request_id: str, message: str, prefix_pos: int) -> None:
+    def add_message(self, request_id: str, message: str, prefix_pos: int) -> None:
         logger.info(f'Request ID {request_id} received')
+        logger.info(f'Prefix pos used: {self.global_prefix_pos + prefix_pos}')
 
-        self.engine.add_request(
+        self.llm_engine.add_request(
             request_id=request_id,
             prompt=self.prefix + message,
             sampling_params=self.sampling_params,
             prefix_pos=self.global_prefix_pos + prefix_pos
         )
 
-        logger.info(f'Prefix pos used: {self.global_prefix_pos + prefix_pos}')
+    def listen_for_message(self) -> None:
+        if self.subscriber.completed_requests:
+            m: MQTTMessage = self.subscriber.completed_requests.pop()
+            logger.info(f'Queue message: {m.payload.decode()}')
+            user_message = json.loads(m.payload.decode())
+            self.add_message(
+                user_message['request_id'], user_message['message'], user_message['prefix_pos']
+            )
 
     def __call__(self) -> None:
-        while self.engine.has_unfinished_requests():
-                logger.info(f'Unfinished requests {self.engine.get_num_unfinished_requests()}')
+        logger.info('Running step function')
 
-                request_outputs: List[vllm.RequestOutput] = self.llm.step()
-                for request_output in request_outputs:
-                    if request_output.finished:
-                        msg_to_publish = {
-                            'request_id': request_output.request_id,
-                            'message': request_output.outputs[0].text
-                        }
-                        logger.info(f'Publishing {request_output.request_id}')
-                        self.client.publish(self.topic, msg_to_publish)
+        while True:
+            self.listen_for_message()
+
+            if not self.llm_engine.has_unfinished_requests():
+                continue
+
+            request_outputs: List[vllm.RequestOutput] = self.llm_engine.step()
+            logger.info(f'Requests processed {[r.request_id for r in request_outputs]}')
+
+            for request_output in request_outputs:
+                if request_output.finished:
+                    msg_to_publish = json.dumps({
+                        'request_id': request_output.request_id,
+                        'prompt': request_output.prompt,
+                        'message': request_output.outputs[0].text
+                    })
+                    logger.info(f'Publishing {request_output.request_id}')
+                    self.publisher.connect()
+                    self.publisher.publish(msg_to_publish)
+
+
+if __name__ == '__main__':
+    bot = Engine()
+    bot()
