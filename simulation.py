@@ -57,13 +57,6 @@ def chatbot_agent(chat_id, message):
     return data['request_id'], data['assistant_message']
 
 
-def user_agent(llm, message):
-    return llm(message)
-
-
-def vllm_agent(llm, message):
-    return llm(message)
-
 def orchestrate_conversation(conversation_id: int):
     logger.info(f'Starting conversation with conversation id: {conversation_id}')
 
@@ -71,21 +64,28 @@ def orchestrate_conversation(conversation_id: int):
         model_id='gpt-3.5-turbo-0125',
         messages=[sys_prompt],
     )
+    chatbot_llm = LLM(
+        model_id='TheBloke/Llama-2-7b-Chat-AWQ',
+        uri='http://0.0.0.0:8000/v1/',
+        messages=[sys_prompt]
+    )
 
-    user_msg = user_agent(llm=user_llm, message='START')
-    chat_id, chatbot_msg = start_chatbot_agent(user_msg)
+    user_msg = user_llm(message='START', max_tokens=1204)
+    # chat_id, chatbot_msg = start_chatbot_agent(user_msg)
+    chat_id=2
 
     logger.info(f'Request ID assigned for conversation id {conversation_id}\t{chat_id}')
 
     conversation_turn = 0
-    num_total_turns = np.random.randint(5, 50)
+    num_total_turns = np.random.randint(5, 15)
 
     logger.info(f'Total number of turns for conversation id {conversation_id}\t{num_total_turns}')
     while conversation_turn < num_total_turns:
         try:
             logger.info(f'Conversation turn for conversation id {conversation_id}\t{conversation_turn}')
-            user_msg = user_agent(llm=user_llm, message=chatbot_msg)
-            chat_id, chatbot_msg = chatbot_agent(chat_id=chat_id, message=user_msg)
+            chatbot_msg = chatbot_llm(message=user_msg, max_tokens=256)
+            user_msg = user_llm(message=chatbot_msg, max_tokens=1204)
+            # chat_id, chatbot_msg = chatbot_agent(chat_id=chat_id, message=user_msg)
 
         except AssertionError as err:
             logger.error(f'{err}')
@@ -101,13 +101,13 @@ def orchestrate_conversation(conversation_id: int):
 
 if __name__ == '__main__':
 
-    num_convs = 1
+    num_convs = 5
     idx = 0
     threads = []
 
     while idx < num_convs:
-        # wait_for_newchat = np.random.randint(2, 30)
-        wait_for_newchat = 1
+        wait_for_newchat = np.random.randint(2, 30)
+        # wait_for_newchat = 1
         logger.info(f'Waiting for a new conversation to start. Will sleep for {wait_for_newchat}s')
         time.sleep(wait_for_newchat)
 
