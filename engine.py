@@ -23,11 +23,7 @@ class Engine:
             repetition_penalty=1.15
         )
 
-        self.prefix = (
-            "You are a helpful customer care chatbot for a financial company called as Mars. "
-            "For a user query, please respond appropriately by asking questions "
-            "and gathering more information before responding.\n"
-        )
+        self.prefix = 'You are a virtual customer service agent for an e-commerce company. Greet customers warmly and converse naturally to understand their needs. Use polite, professional yet approachable language. Ask clarifying questions as needed. Provide clear explanations, troubleshooting steps, and accurate information based on company policies. Offer alternatives if requests cannot be fulfilled. Maintain a positive, patient, and empathetic attitude. Handle inquiries about orders, shipping, returns, products, account issues, etc. with the goal of an excellent customer experience.'
 
         self.llm = LLM(model=model_id, gpu_memory_utilization=0.7, max_model_len=1024)
         initial_output = self.llm.generate(
@@ -74,7 +70,8 @@ class Engine:
                 continue
 
             request_outputs: List[vllm.RequestOutput] = self.llm_engine.step()
-            logger.info(f'Requests processed {[r.request_id for r in request_outputs]}')
+            logger.debug(f'Requests processed in this step: {[r.request_id for r in request_outputs]}')
+            logger.debug(f'Number of unfinished requests: {self.llm_engine.get_num_unfinished_requests()}')
 
             for request_output in request_outputs:
                 if request_output.finished:
@@ -84,6 +81,9 @@ class Engine:
                         'message': request_output.outputs[0].text
                     })
                     logger.info(f'Publishing {request_output.request_id}')
+                    logger.info(
+                        f'Tokens for the prompt: {len(request_output.prompt_token_ids)} Tokens for the request: {len(request_output.outputs[0].token_ids)}'
+                    )
                     self.publisher.connect()
                     self.publisher.publish(msg_to_publish)
 

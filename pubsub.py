@@ -30,7 +30,7 @@ class Subscriber:
         self.completed_requests = []
 
     def on_message(self, client, userdata, message):
-        logger.info(f'Received message: {message}')
+        # logger.info(f'Received message: {message}')
         self.completed_requests.append(message)
 
     def connect(self, broker="localhost", port=1883):

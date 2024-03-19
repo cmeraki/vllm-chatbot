@@ -49,7 +49,7 @@ def chat(request: UserChatRequest) -> Union[UserChatResponse, str]:
         return "User chat not found"
 
     assistant_message = conversation.chat(user_message=request.user_message)
-
+    logger.info(f'Assistant message: {assistant_message}')
     return {
         'request_id': request.request_id,
         'assistant_message': assistant_message

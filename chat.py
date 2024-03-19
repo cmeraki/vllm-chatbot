@@ -36,9 +36,9 @@ class Chat:
         while True:
             if self.subscriber.completed_requests:
                 m: MQTTMessage = self.subscriber.completed_requests.pop()
-                logger.info(f'Queue message: {m.payload.decode()}')
                 response = json.loads(m.payload.decode())
                 assistant_message = response['message']
+                logger.info(f'Assistant message: {assistant_message}. Queue message: {m.payload.decode()}')
                 self.messages.append(assistant_message)
 
                 return assistant_message
