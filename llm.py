@@ -40,7 +40,7 @@ class LLM():
             response = self._get_response(
                 self.messages, json_mode, **kwargs
             )
-            self._add_msg(message, json_mode, 'assistant')
+            self._add_msg(response, json_mode, 'assistant')
             return response
 
         response = self._get_response(
@@ -78,9 +78,9 @@ class LLM():
         logger.debug(f'Prompt: {messages[-1]}, output: {op}')
         logger.debug(f'Tokens used in generation using {self.model_id}: {completions.usage}')
 
-        self.total_tokens += completions.usage.total_tokens
-        self.input_tokens += completions.usage.prompt_tokens
-        self.output_tokens += completions.usage.completion_tokens
+        self.total_tokens = completions.usage.total_tokens
+        self.input_tokens = completions.usage.prompt_tokens
+        self.output_tokens = completions.usage.completion_tokens
 
         return op
 
