@@ -51,7 +51,7 @@ class LLM():
 
     def _get_response(self, messages, json_mode, **kwargs) -> str:
         logger.debug(f'Sending request to the LLM with JSON mode: {json_mode}')
-        logger.info(f'Length of the message stream: {len(messages)}')
+        logger.debug(f'Length of the message stream: {len(messages)}')
 
         if json_mode:
             completions = self.client.chat.completions.create(
@@ -75,7 +75,7 @@ class LLM():
 
             op = completions.choices[0].message.content
 
-        logger.info(f'Prompt: {messages[-1]}, output: {op}')
+        logger.debug(f'Prompt: {messages[-1]}, output: {op}')
         logger.debug(f'Tokens used in generation using {self.model_id}: {completions.usage}')
 
         self.total_tokens += completions.usage.total_tokens
